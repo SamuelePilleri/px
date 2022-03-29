@@ -4,8 +4,6 @@ import copy
 import socket
 import sys
 
-import netaddr
-
 # Python 2.x vs 3.x support
 try:
     import urllib.parse as urlparse
@@ -13,6 +11,12 @@ try:
 except ImportError:
     import urlparse
     import urllib as request
+
+try:
+    import netaddr
+except ImportError:
+    pprint("Requires module netaddr")
+    sys.exit()
 
 # Proxy modes - source of proxy info
 MODE_NONE = 0
@@ -108,7 +112,7 @@ class _WproxyBase(object):
     noproxy = None
     noproxy_hosts = None
 
-    def __init__(self, debug_print = None):
+    def __init__(self, mode = MODE_NONE, servers = None, noproxy = None, noproxy_hosts = None, debug_print = None):
         global dprint
         if debug_print is not None:
             dprint = debug_print
@@ -117,13 +121,20 @@ class _WproxyBase(object):
         self.noproxy = netaddr.IPSet([])
         self.noproxy_hosts = []
 
-        proxy = request.getproxies()
-        if "http" in proxy:
-            self.mode = MODE_ENV
-            self.servers = parse_proxy(proxy["http"])
+        if mode != MODE_NONE:
+            # MODE_CONFIG or MODE_CONFIG_PAC
+            self.mode = mode
+            self.servers = servers or []
+            self.noproxy = noproxy or netaddr.IPSet([])
+            self.noproxy_hosts = noproxy_hosts or []
+        else:
+            proxy = request.getproxies()
+            if "http" in proxy:
+                self.mode = MODE_ENV
+                self.servers = parse_proxy(proxy["http"])
 
-            if "no" in proxy:
-                self.noproxy, self.noproxy_hosts = parse_noproxy(proxy["no"])
+                if "no" in proxy:
+                    self.noproxy, self.noproxy_hosts = parse_noproxy(proxy["no"])
 
     def get_netloc(self, url):
         "Split url into netloc = hostname:port and path"
@@ -305,12 +316,10 @@ if sys.platform == "win32":
             self.noproxy_hosts = []
 
             if mode != MODE_NONE:
-                # MODE_CONFIG or MODE_CONFIG_PAC
-                self.mode = mode
-                self.servers = servers or []
-                self.noproxy = noproxy or netaddr.IPSet([])
-                self.noproxy_hosts = noproxy_hosts or []
-            else:
+                # Check MODE_CONFIG and MODE_CONFIG_PAC cases
+                super().__init__(mode, servers, noproxy, noproxy_hosts, debug_print)
+
+            if self.mode == MODE_NONE:
                 # Get proxy info from Internet Options
                 #   MODE_AUTO, MODE_PAC or MODE_MANUAL
                 ie_proxy_config = WINHTTP_CURRENT_USER_IE_PROXY_CONFIG()
@@ -441,6 +450,11 @@ else:
 
 if __name__ == "__main__":
     wp = Wproxy(debug_print=print)
+    print("Servers: " + str(wp.servers))
+    print("Noproxy: " + str(wp.noproxy))
+    print("Noproxy hosts: " + str(wp.noproxy_hosts))
+
+    wp = Wproxy(mode = MODE_CONFIG, servers = ["http://testproxy:3128"], noproxy = "google.com")
     print("Servers: " + str(wp.servers))
     print("Noproxy: " + str(wp.noproxy))
     print("Noproxy hosts: " + str(wp.noproxy_hosts))

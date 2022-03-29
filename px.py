@@ -16,8 +16,20 @@ import threading
 import time
 import traceback
 
-from debug import pprint, Debug
-import wproxy
+# Python 2.x vs 3.x support
+try:
+    import configparser
+    import http.server as httpserver
+    import socketserver
+    import urllib.parse as urlparse
+except ImportError:
+    import ConfigParser as configparser
+    import SimpleHTTPServer as httpserver
+    import SocketServer as socketserver
+    import urlparse
+
+    os.getppid = psutil.Process().ppid
+    PermissionError = WindowsError
 
 # Dependencies
 try:
@@ -39,23 +51,6 @@ except ImportError:
     sys.exit()
 
 try:
-    import sspi
-except ImportError:
-    pprint("Requires module pywin32 sspi")
-    sys.exit()
-try:
-    import pywintypes
-except ImportError:
-    pprint("Requires module pywin32 pywintypes")
-    sys.exit()
-
-try:
-    import winkerberos
-except ImportError:
-    pprint("Requires module winkerberos")
-    sys.exit()
-
-try:
     import ntlm_auth.ntlm
 except ImportError:
     pprint("Requires module ntlm-auth")
@@ -70,22 +65,32 @@ except ImportError:
     pprint("Requires module keyring")
     sys.exit()
 
-# Python 2.x vs 3.x support
-try:
-    import configparser
-    import http.server as httpserver
-    import socketserver
-    import urllib.parse as urlparse
-    import winreg
-except ImportError:
-    import ConfigParser as configparser
-    import SimpleHTTPServer as httpserver
-    import SocketServer as socketserver
-    import urlparse
-    import _winreg as winreg
+if sys.platform == "win32":
+    # Python 2.x vs 3.x support
+    try:
+        import winreg
+    except ImportError:
+        import _winreg as winreg
 
-    os.getppid = psutil.Process().ppid
-    PermissionError = WindowsError
+    try:
+        import sspi
+    except ImportError:
+        pprint("Requires module pywin32 sspi")
+        sys.exit()
+    try:
+        import pywintypes
+    except ImportError:
+        pprint("Requires module pywin32 pywintypes")
+        sys.exit()
+
+    try:
+        import winkerberos
+    except ImportError:
+        pprint("Requires module winkerberos")
+        sys.exit()
+
+from debug import pprint, Debug
+import wproxy
 
 HELP = """Px v%s
 
@@ -1388,10 +1393,11 @@ def parse_config():
 
     servers = wproxy.parse_proxy(State.config.get("proxy", "server"))
 
-    if "--install" in sys.argv:
-        install()
-    elif "--uninstall" in sys.argv:
-        uninstall()
+    if sys.platform == "win32":
+        if "--install" in sys.argv:
+            install()
+        elif "--uninstall" in sys.argv:
+            uninstall()
     elif "--quit" in sys.argv:
         quit()
     elif "--save" in sys.argv:
@@ -1491,51 +1497,52 @@ def get_script_path():
     # Frozen mode
     return sys.executable
 
-def get_script_cmd():
-    spath = get_script_path()
-    if os.path.splitext(spath)[1].lower() == ".py":
-        return sys.executable + ' "%s"' % spath
+if sys.platform == "win32":
+    def get_script_cmd():
+        spath = get_script_path()
+        if os.path.splitext(spath)[1].lower() == ".py":
+            return sys.executable + ' "%s"' % spath
 
-    return spath
+        return spath
 
-def check_installed():
-    ret = True
-    runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-        r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
-    try:
-        winreg.QueryValueEx(runkey, "Px")
-    except:
-        ret = False
-    winreg.CloseKey(runkey)
-
-    return ret
-
-def install():
-    if check_installed() is False:
+    def check_installed():
+        ret = True
         runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
-            winreg.KEY_WRITE)
-        winreg.SetValueEx(runkey, "Px", 0, winreg.REG_EXPAND_SZ,
-            get_script_cmd())
+            r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+        try:
+            winreg.QueryValueEx(runkey, "Px")
+        except:
+            ret = False
         winreg.CloseKey(runkey)
-        pprint("Px installed successfully")
-    else:
-        pprint("Px already installed")
 
-    sys.exit()
+        return ret
 
-def uninstall():
-    if check_installed() is True:
-        runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
-            winreg.KEY_WRITE)
-        winreg.DeleteValue(runkey, "Px")
-        winreg.CloseKey(runkey)
-        pprint("Px uninstalled successfully")
-    else:
-        pprint("Px is not installed")
+    def install():
+        if check_installed() is False:
+            runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
+                winreg.KEY_WRITE)
+            winreg.SetValueEx(runkey, "Px", 0, winreg.REG_EXPAND_SZ,
+                get_script_cmd())
+            winreg.CloseKey(runkey)
+            pprint("Px installed successfully")
+        else:
+            pprint("Px already installed")
 
-    sys.exit()
+        sys.exit()
+
+    def uninstall():
+        if check_installed() is True:
+            runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
+                winreg.KEY_WRITE)
+            winreg.DeleteValue(runkey, "Px")
+            winreg.CloseKey(runkey)
+            pprint("Px uninstalled successfully")
+        else:
+            pprint("Px is not installed")
+
+        sys.exit()
 
 ###
 # Attach/detach console
